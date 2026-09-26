@@ -1,8 +1,14 @@
 #pragma once
 
 // ================== WLAN ==================
-#define WIFI_SSID     "DEIN_WLAN_NAME"
-#define WIFI_PASSWORD "DEIN_WLAN_PASSWORT"
+// Beliebig viele WLANs eintragen. Das Board verbindet sich automatisch mit
+// dem stärksten erreichbaren Netz aus dieser Liste.
+struct WifiCredentials { const char *ssid; const char *password; };
+static const WifiCredentials WIFI_NETWORKS[] = {
+  { "DEIN_WLAN_NAME",   "DEIN_WLAN_PASSWORT" },
+  { "ZWEITES_WLAN",     "PASSWORT_2" },
+  // { "HANDY_HOTSPOT", "PASSWORT_3" },
+};
 
 // ================== Haltestelle ==================
 // Suchbegriff für die MVG-Haltestellensuche (wird beim Start aufgelöst).
@@ -44,3 +50,11 @@
 
 // Sensorwerte alle 2 s im Seriellen Monitor ausgeben (zum Kalibrieren)
 #define LDR_DEBUG       true
+
+// ================== Nachtabschaltung ==================
+// Display ist zwischen NIGHT_START und NIGHT_END (volle Stunden) aus.
+// Antippen schaltet es für NIGHT_WAKE_SECONDS wieder ein.
+#define NIGHT_MODE          true
+#define NIGHT_START         23
+#define NIGHT_END           6
+#define NIGHT_WAKE_SECONDS  30

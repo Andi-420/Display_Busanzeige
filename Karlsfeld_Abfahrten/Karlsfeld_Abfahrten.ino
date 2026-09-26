@@ -17,6 +17,7 @@
 #define ARDUINOJSON_USE_LONG_LONG 1
 
 #include <WiFi.h>
+#include <WiFiMulti.h>
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
@@ -61,6 +62,7 @@
 const char *TZ_INFO = "CET-1CEST,M3.5.0,M10.5.0/3";
 const char *API_BASE = "https://www.mvg.de/api/bgw-pt/v3";
 
+WiFiMulti wifiMulti;
 TFT_eSPI tft;
 TFT_eSprite rowSprite(&tft);
 SPIClass touchSpi(VSPI);
@@ -84,6 +86,8 @@ time_t lastSuccess = 0;
 unsigned long lastFetchMs = 0;
 unsigned long lastDrawMs  = 0;
 bool forceFetch = true;
+bool nightActive = false;          // Nachtabschaltung aktiv
+unsigned long wakeUntilMs = 0;     // nachts per Touch aufgeweckt bis ...
 
 // =====================================================================
 // Hilfsfunktionen
@@ -325,7 +329,7 @@ void drawFooter() {
     text = "Fehler: " + lastError;
     color = COL_CANCEL;
   } else if (lastSuccess > 0) {
-    text = "Stand " + clockString(lastSuccess, true) + "   Tippen = aktualisieren";
+    text = "Stand " + clockString(lastSuccess, true) + "  " + WiFi.SSID();
     if (time(nullptr) - lastSuccess > 180) color = COL_DELAY;   // Daten veraltet
   }
   tft.setTextColor(color, bg);
@@ -438,16 +442,18 @@ void bootMessage(const String &msg) {
 void connectWifi() {
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  bootMessage("Verbinde mit WLAN \"" + String(WIFI_SSID) + "\"...");
+  for (const WifiCredentials &net : WIFI_NETWORKS) {
+    wifiMulti.addAP(net.ssid, net.password);
+  }
+  bootMessage("Suche bekannte WLANs...");
   unsigned long start = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - start < 20000) {
+  while (wifiMulti.run(5000) != WL_CONNECTED && millis() - start < 30000) {
     delay(250);
   }
   if (WiFi.status() == WL_CONNECTED) {
-    bootMessage("WLAN verbunden: " + WiFi.localIP().toString());
+    bootMessage("Verbunden mit " + WiFi.SSID() + " (" + WiFi.localIP().toString() + ")");
   } else {
-    bootMessage("WLAN nicht erreichbar - versuche weiter...");
+    bootMessage("Kein bekanntes WLAN erreichbar - versuche weiter...");
   }
 }
 
@@ -493,7 +499,15 @@ void updateBrightness() {
   if (nowMs - lastMs < 100) return;
   lastMs = nowMs;
 
-  if (!AUTO_BRIGHTNESS) return;
+  if (nightActive && (long)(wakeUntilMs - millis()) <= 0) {   // Nacht: Beleuchtung aus
+    brightness = 0;
+    setBacklight(0);
+    return;
+  }
+  if (!AUTO_BRIGHTNESS) {
+    setBacklight(BRIGHTNESS_MAX);
+    return;
+  }
 
   int raw = readLdr();
   // starke Glättung, damit kurze Schatten o.ä. nicht flackern
@@ -514,6 +528,20 @@ void updateBrightness() {
     Serial.printf("LDR roh: %4d  geglaettet: %4d  Helligkeit: %3d\n",
                   raw, (int)ldrFiltered, (int)brightness);
   }
+}
+
+// =====================================================================
+// Nachtabschaltung
+// =====================================================================
+
+bool isNightTime() {
+  if (!NIGHT_MODE || !timeValid()) return false;
+  time_t now = time(nullptr);
+  struct tm tmv;
+  localtime_r(&now, &tmv);
+  int h = tmv.tm_hour;
+  if (NIGHT_START > NIGHT_END) return h >= NIGHT_START || h < NIGHT_END;  // über Mitternacht
+  return h >= NIGHT_START && h < NIGHT_END;
 }
 
 // =====================================================================
@@ -559,12 +587,25 @@ void setup() {
 void loop() {
   unsigned long nowMs = millis();
 
+  // Nachtmodus umschalten
+  bool night = isNightTime();
+  if (night != nightActive) {
+    nightActive = night;
+    Serial.println(night ? "Nachtmodus: Display aus" : "Nachtmodus beendet");
+    if (!night) forceFetch = true;   // morgens gleich frische Daten
+  }
+  bool displayOn = !nightActive || (long)(wakeUntilMs - nowMs) > 0;
+
   updateBrightness();
 
-  // Touch: sofort aktualisieren
+  // Touch: sofort aktualisieren (nachts: Display kurz einschalten)
   static unsigned long lastTouchMs = 0;
   if (touch.tirqTouched() && touch.touched() && nowMs - lastTouchMs > 1000) {
     lastTouchMs = nowMs;
+    if (nightActive) {
+      wakeUntilMs = nowMs + NIGHT_WAKE_SECONDS * 1000UL;
+      displayOn = true;
+    }
     forceFetch = true;
     tft.fillRect(0, SCREEN_H - FOOTER_H, SCREEN_W, FOOTER_H, COL_BG);
     tft.setTextDatum(ML_DATUM);
@@ -572,22 +613,30 @@ void loop() {
     tft.drawString("Aktualisiere...", 4, SCREEN_H - FOOTER_H / 2, 2);
   }
 
-  // Daten laden
-  if (forceFetch || nowMs - lastFetchMs >= REFRESH_SECONDS * 1000UL) {
+  // WLAN-Verbindung halten (verbindet ggf. mit einem anderen bekannten Netz)
+  static unsigned long lastWifiCheckMs = 0;
+  if (WiFi.status() != WL_CONNECTED && nowMs - lastWifiCheckMs >= 10000) {
+    lastWifiCheckMs = nowMs;
+    if (wifiMulti.run(5000) == WL_CONNECTED) {
+      Serial.println("WLAN verbunden: " + WiFi.SSID());
+      forceFetch = true;
+    }
+  }
+
+  // Daten laden (nachts nur, wenn das Display aufgeweckt wurde)
+  if (displayOn && (forceFetch || nowMs - lastFetchMs >= REFRESH_SECONDS * 1000UL)) {
     forceFetch = false;
     lastFetchMs = nowMs;
     if (WiFi.status() == WL_CONNECTED) {
       if (stationId == "") findStation();
       if (stationId != "") fetchDepartures();
-    } else {
-      WiFi.reconnect();
     }
     drawAll();
     lastDrawMs = nowMs;
   }
 
   // Minuten-Countdown und Uhr zwischen den Abrufen weiterlaufen lassen
-  if (nowMs - lastDrawMs >= 5000) {
+  if (displayOn && nowMs - lastDrawMs >= 5000) {
     lastDrawMs = nowMs;
     drawAll();
   }

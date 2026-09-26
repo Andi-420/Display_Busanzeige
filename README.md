@@ -44,7 +44,17 @@ und überschreibe die vorhandene Datei. Nach einem Update von TFT_eSPI musst du 
 ## 3. WLAN eintragen
 
 Öffne `Karlsfeld_Abfahrten/Karlsfeld_Abfahrten.ino` in der Arduino IDE. Trage im Tab
-`config.h` den WLAN-Namen und das Passwort ein. Das Board braucht ein **2,4-GHz-WLAN**.
+`config.h` unter `WIFI_NETWORKS` deine WLANs ein. Du kannst beliebig viele eintragen. Das
+Board verbindet sich mit dem stärksten erreichbaren Netz. Bricht die Verbindung ab, wechselt
+es automatisch zu einem anderen bekannten Netz. Das Board braucht ein **2,4-GHz-WLAN**.
+
+```cpp
+static const WifiCredentials WIFI_NETWORKS[] = {
+  { "Zuhause",      "passwort1" },
+  { "Buero",        "passwort2" },
+  { "Handy",        "passwort3" },
+};
+```
 
 In `config.h` kannst du außerdem Folgendes einstellen:
 
@@ -67,7 +77,7 @@ z. B. `Gefunden: Karlsfeld, Rathausstraße -> de:09174:xxxx`. Diese ID kannst du
 ## Bedienung
 
 - Die Anzeige lädt die Daten alle 30 Sekunden neu. Der Minuten-Countdown läuft dazwischen weiter.
-- Ein **Tipp auf das Display** lädt die Daten sofort neu.
+- Ein **Tipp auf das Display** lädt die Daten sofort neu (nachts: Display kurz einschalten).
 - Ab 60 Minuten wird die Uhrzeit statt der Minuten angezeigt. Ausfälle erscheinen durchgestrichen mit „faellt aus“.
 
 ## Helligkeitsregelung
@@ -82,6 +92,12 @@ sanft über. Einstellungen in `config.h`:
 
 Der Sensor sitzt auf der Vorderseite neben dem Display. Bei manchen Boards reagiert er nur
 schwach. Ändert sich der Rohwert kaum, liegt das an der Hardware.
+
+## Nachtabschaltung
+
+Von `NIGHT_START` (23 Uhr) bis `NIGHT_END` (6 Uhr) ist die Beleuchtung aus, und es werden
+keine Daten abgerufen. Ein Tipp auf das Display schaltet es für `NIGHT_WAKE_SECONDS`
+(30 s) ein und lädt aktuelle Abfahrten. `NIGHT_MODE false` schaltet die Funktion ab.
 
 ## Fehlerbehebung
 
