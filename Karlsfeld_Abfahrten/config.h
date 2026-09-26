@@ -26,3 +26,21 @@
 // ================== Aktualisierung ==================
 #define REFRESH_SECONDS 30   // wie oft die Daten neu geladen werden
 #define MAX_DEPARTURES  12   // wie viele Abfahrten von der API geholt werden
+
+// ================== Helligkeitsregelung ==================
+// Lichtsensor (LDR) auf dem Board steuert die Hintergrundbeleuchtung.
+// false = immer volle Helligkeit.
+#define AUTO_BRIGHTNESS true
+
+// Helligkeit der Hintergrundbeleuchtung (0..255)
+#define BRIGHTNESS_MIN  15   // bei Dunkelheit (0 = ganz aus)
+#define BRIGHTNESS_MAX  255  // bei hellem Umgebungslicht
+
+// Kalibrierung des Sensors: Rohwerte aus dem Seriellen Monitor ablesen
+// ("LDR roh: ..."), einmal im hellen Raum, einmal abgedunkelt.
+// Beim CYD gilt: viel Licht = kleiner Wert, Dunkelheit = großer Wert.
+#define LDR_BRIGHT      0    // Rohwert bei hellem Licht
+#define LDR_DARK        300  // Rohwert bei Dunkelheit
+
+// Sensorwerte alle 2 s im Seriellen Monitor ausgeben (zum Kalibrieren)
+#define LDR_DEBUG       true

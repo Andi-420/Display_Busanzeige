@@ -34,6 +34,12 @@
 #define XPT2046_CLK  25
 #define XPT2046_CS   33
 
+// ---------- Helligkeit ----------
+#define LDR_PIN       34     // Lichtsensor (nur Eingang, ADC1)
+#define BACKLIGHT_PIN 21     // Hintergrundbeleuchtung
+#define BL_PWM_FREQ   5000
+#define BL_PWM_BITS   8
+
 // ---------- Layout ----------
 #define SCREEN_W   320
 #define SCREEN_H   240
@@ -446,6 +452,71 @@ void connectWifi() {
 }
 
 // =====================================================================
+// Helligkeitsregelung
+// =====================================================================
+
+float ldrFiltered = -1;      // geglätteter Sensorwert
+float brightness  = BRIGHTNESS_MAX;
+
+void setBacklight(uint8_t value) {
+#if defined(ESP_ARDUINO_VERSION_MAJOR) && ESP_ARDUINO_VERSION_MAJOR >= 3
+  ledcWrite(BACKLIGHT_PIN, value);
+#else
+  ledcWrite(0, value);
+#endif
+}
+
+void initBacklight() {
+#if defined(ESP_ARDUINO_VERSION_MAJOR) && ESP_ARDUINO_VERSION_MAJOR >= 3
+  ledcAttach(BACKLIGHT_PIN, BL_PWM_FREQ, BL_PWM_BITS);
+#else
+  ledcSetup(0, BL_PWM_FREQ, BL_PWM_BITS);
+  ledcAttachPin(BACKLIGHT_PIN, 0);
+#endif
+  setBacklight(BRIGHTNESS_MAX);
+
+  pinMode(LDR_PIN, INPUT);
+  analogSetPinAttenuation(LDR_PIN, ADC_0db);   // empfindlichster Messbereich
+}
+
+int readLdr() {
+  long sum = 0;
+  for (int i = 0; i < 8; i++) sum += analogRead(LDR_PIN);
+  return sum / 8;
+}
+
+// wird regelmäßig aus loop() aufgerufen
+void updateBrightness() {
+  static unsigned long lastMs = 0;
+  static unsigned long lastDebugMs = 0;
+  unsigned long nowMs = millis();
+  if (nowMs - lastMs < 100) return;
+  lastMs = nowMs;
+
+  if (!AUTO_BRIGHTNESS) return;
+
+  int raw = readLdr();
+  // starke Glättung, damit kurze Schatten o.ä. nicht flackern
+  ldrFiltered = (ldrFiltered < 0) ? raw : ldrFiltered * 0.95f + raw * 0.05f;
+
+  // 0 = hell, 1 = dunkel
+  float t = (ldrFiltered - LDR_BRIGHT) / (float)(LDR_DARK - LDR_BRIGHT);
+  t = constrain(t, 0.0f, 1.0f);
+  float target = BRIGHTNESS_MAX - t * (BRIGHTNESS_MAX - BRIGHTNESS_MIN);
+
+  // sanft überblenden (max. 3 Stufen pro 100 ms)
+  float step = constrain(target - brightness, -3.0f, 3.0f);
+  brightness += step;
+  setBacklight((uint8_t)(brightness + 0.5f));
+
+  if (LDR_DEBUG && nowMs - lastDebugMs >= 2000) {
+    lastDebugMs = nowMs;
+    Serial.printf("LDR roh: %4d  geglaettet: %4d  Helligkeit: %3d\n",
+                  raw, (int)ldrFiltered, (int)brightness);
+  }
+}
+
+// =====================================================================
 // Setup / Loop
 // =====================================================================
 
@@ -455,6 +526,7 @@ void setup() {
   tft.init();
   tft.setRotation(1);           // Querformat, USB-Anschluss rechts
   tft.fillScreen(COL_BG);
+  initBacklight();              // nach tft.init(), übernimmt Pin 21 per PWM
   rowSprite.setColorDepth(16);
   rowSprite.createSprite(SCREEN_W, ROW_H);
 
@@ -486,6 +558,8 @@ void setup() {
 
 void loop() {
   unsigned long nowMs = millis();
+
+  updateBrightness();
 
   // Touch: sofort aktualisieren
   static unsigned long lastTouchMs = 0;

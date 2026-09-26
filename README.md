@@ -70,6 +70,19 @@ z. B. `Gefunden: Karlsfeld, Rathausstraße -> de:09174:xxxx`. Diese ID kannst du
 - Ein **Tipp auf das Display** lädt die Daten sofort neu.
 - Ab 60 Minuten wird die Uhrzeit statt der Minuten angezeigt. Ausfälle erscheinen durchgestrichen mit „faellt aus“.
 
+## Helligkeitsregelung
+
+Der Lichtsensor (LDR) auf dem Board regelt die Hintergrundbeleuchtung automatisch und blendet
+sanft über. Einstellungen in `config.h`:
+
+- `BRIGHTNESS_MIN` / `BRIGHTNESS_MAX`: Helligkeit bei Dunkelheit bzw. hellem Licht (0–255)
+- `LDR_BRIGHT` / `LDR_DARK`: Kalibrierung. Im Seriellen Monitor erscheint alle 2 s
+  `LDR roh: ...`. Notiere den Wert im hellen Raum und bei abgedecktem Sensor und trage ihn ein.
+- `AUTO_BRIGHTNESS false` schaltet die Regelung ab. `LDR_DEBUG false` schaltet die Ausgabe ab.
+
+Der Sensor sitzt auf der Vorderseite neben dem Display. Bei manchen Boards reagiert er nur
+schwach. Ändert sich der Rohwert kaum, liegt das an der Hardware.
+
 ## Fehlerbehebung
 
 | Problem | Lösung |
