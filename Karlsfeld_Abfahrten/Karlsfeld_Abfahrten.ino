@@ -228,7 +228,9 @@ bool findStation() {
 bool fetchDepartures() {
   String url = String(API_BASE) + "/departures?globalId=" + urlEncode(stationId.c_str()) +
                "&limit=" + String(MAX_DEPARTURES) +
-               "&offsetInMinutes=" + String(WALK_MINUTES);
+               "&offsetInMinutes=" + String(WALK_MINUTES) +
+               // ohne diese Angabe liefert die API keine Regionalbusse (REGIONAL_BUS)
+               "&transportTypes=UBAHN,TRAM,BUS,SBAHN,REGIONAL_BUS,BAHN";
 
   JsonDocument filter;
   filter[0]["label"]                 = true;
@@ -247,6 +249,8 @@ bool fetchDepartures() {
   for (JsonObject d : doc.as<JsonArray>()) {
     if (n >= MAX_DEPARTURES) break;
     const char *line = d["label"] | "?";
+    Serial.printf("  %-5s %-12s %s\n", line, (const char *)(d["transportType"] | "?"),
+                  (const char *)(d["destination"] | ""));
     if (!lineAllowed(line)) continue;
 
     Departure &dep = departures[n];
