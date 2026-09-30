@@ -1,16 +1,17 @@
-# Abfahrtsmonitor Karlsfeld Rathausstraße (ESP32-2432S028R)
+# Abfahrtsmonitor Karlsfeld (ESP32-2432S028R)
 
-Zeigt die nächsten Abfahrten an der Haltestelle **Karlsfeld, Rathausstraße** auf dem
+Zeigt die nächsten Abfahrten der Haltestellen **Karlsfeld, Rathausstraße** und
+**Karlsfeld, Einkaufsmärkte** gemeinsam auf dem
 2,8"-Display (ILI9341, 320×240) des ESP32-2432S028R an. Die Echtzeitdaten kommen von der
 MVG-API, die das gesamte MVV-Gebiet abdeckt, also auch die Regionalbusse in Karlsfeld.
 
 ```
 ┌──────────────────────────────────────┐
-│ Rathausstrasse                 14:32 │
+│ Karlsfeld                      14:32 │
 ├──────────────────────────────────────┤
-│ [710] Dachau Bahnhof             3'  │  grün   = Echtzeit, pünktlich
-│ [711] Karlsfeld S-Bahnhof   +2   7'  │  orange = verspätet
-│ [710] Moosach Bahnhof           12'  │  weiß   = nur Fahrplan
+│ [710] R Dachau Bahnhof           3'  │  grün   = Echtzeit, pünktlich
+│ [711] E Karlsfeld S-Bahnhof +2   7'  │  orange = verspätet
+│ [710] R Moosach Bahnhof         12'  │  weiß   = nur Fahrplan
 │ ...                                  │
 ├──────────────────────────────────────┤
 │ Stand 14:32:05   Tippen = aktualisieren
@@ -63,7 +64,7 @@ In `config.h` kannst du außerdem Folgendes einstellen:
 | `LINE_FILTER` | nur bestimmte Linien anzeigen, z. B. `"710,711"` |
 | `WALK_MINUTES` | Abfahrten ausblenden, die du zu Fuß nicht mehr erreichst |
 | `REFRESH_SECONDS` | Abrufintervall (Standard: 30 s) |
-| `STATION_GLOBAL_ID` | feste Haltestellen-ID statt automatischer Suche |
+| `STATIONS` | Liste der Haltestellen (Suchbegriff, Kürzel, optional feste ID) |
 
 ## 4. Hochladen
 
@@ -71,8 +72,23 @@ Board per USB anschließen, Port auswählen und hochladen. Falls der Upload nich
 beim Erscheinen von „Connecting…“ die **BOOT**-Taste gedrückt halten.
 
 Öffne den Seriellen Monitor mit 115200 Baud. Dort steht, welche Haltestelle gefunden wurde,
-z. B. `Gefunden: Karlsfeld, Rathausstraße -> de:09174:xxxx`. Diese ID kannst du in
-`STATION_GLOBAL_ID` eintragen. Dann entfällt die Suche beim Start.
+z. B. `Gefunden [R]: Karlsfeld, Rathausstraße -> de:09174:xxxx`. Diese ID kannst du in
+`STATIONS` als vierten Wert eintragen. Dann entfällt die Suche beim Start.
+
+## Mehrere Haltestellen
+
+In `config.h` stehen die Haltestellen in der Liste `STATIONS`:
+
+```cpp
+static const StationConfig STATIONS[] = {
+  { "Karlsfeld Rathausstraße",   "Rathaus", "R", "" },
+  { "Karlsfeld Einkaufsmärkte",  "Einkauf", "E", "" },
+};
+```
+
+Die Abfahrten aller Haltestellen werden zusammen nach Zeit sortiert angezeigt. Das Kürzel
+(`R`, `E`) steht grau vor dem Ziel und zeigt, an welcher Haltestelle der Bus abfährt. Weitere
+Haltestellen kannst du einfach als neue Zeile ergänzen.
 
 ## Bedienung
 
@@ -107,7 +123,7 @@ keine Daten abgerufen. Ein Tipp auf das Display schaltet es für `NIGHT_WAKE_SEC
 | Farben invertiert / Bild gespiegelt | In `User_Setup.h` `ILI9341_DRIVER` statt `ILI9341_2_DRIVER` bzw. `TFT_INVERSION_ON` probieren (es gibt mehrere Hardware-Varianten) |
 | Kompilierfehler in TFT_eSPI | neueste TFT_eSPI-Version installieren; hilft das nicht, ESP32-Boardpaket 2.0.17 verwenden |
 | „HTTP-Fehler -1“ | WLAN/Internet prüfen |
-| Falsche Haltestelle | ID aus dem Seriellen Monitor prüfen und in `STATION_GLOBAL_ID` eintragen |
+| Falsche Haltestelle | Zeilen `Gefunden [..]` im Seriellen Monitor prüfen und die richtige ID in `STATIONS` eintragen |
 
 Die Umlaute werden als ae/oe/ue/ss dargestellt, weil die eingebauten Schriftarten nur ASCII
 unterstützen.

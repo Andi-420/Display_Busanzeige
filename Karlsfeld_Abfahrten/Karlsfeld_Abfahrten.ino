@@ -76,11 +76,15 @@ struct Departure {
   int    delay;        // Minuten
   bool   realtime;
   bool   cancelled;
+  uint8_t station;     // Index in STATIONS
 };
 
-Departure departures[MAX_DEPARTURES];
+const int NUM_STATIONS = sizeof(STATIONS) / sizeof(STATIONS[0]);
+const int MAX_TOTAL    = MAX_DEPARTURES * NUM_STATIONS;
+
+Departure departures[MAX_TOTAL];
 int  departureCount = 0;
-String stationId = STATION_GLOBAL_ID;
+String stationIds[NUM_STATIONS];   // aufgelöste globalIds
 String lastError = "";
 time_t lastSuccess = 0;
 unsigned long lastFetchMs = 0;
@@ -198,8 +202,9 @@ bool httpGetJson(const String &url, JsonDocument &doc, JsonDocument &filter) {
   return true;
 }
 
-bool findStation() {
-  String url = String(API_BASE) + "/locations?query=" + urlEncode(STATION_QUERY) +
+bool findStation(int idx) {
+  const StationConfig &cfg = STATIONS[idx];
+  String url = String(API_BASE) + "/locations?query=" + urlEncode(cfg.query) +
                "&locationTypes=STATION";
 
   JsonDocument filter;
@@ -211,32 +216,32 @@ bool findStation() {
   JsonDocument doc;
   if (!httpGetJson(url, doc, filter)) return false;
 
-  JsonArray arr = doc.as<JsonArray>();
   String fallback = "";
-  for (JsonObject loc : arr) {
-    const char *type = loc["type"] | "";
-    const char *id   = loc["globalId"] | "";
-    const char *name = loc["name"] | "";
+  for (JsonObject loc : doc.as<JsonArray>()) {
+    const char *type  = loc["type"] | "";
+    const char *id    = loc["globalId"] | "";
+    const char *name  = loc["name"] | "";
     const char *place = loc["place"] | "";
     if (strcmp(type, "STATION") != 0 || !id[0]) continue;
 
-    Serial.printf("Gefunden: %s, %s -> %s\n", place, name, id);
+    Serial.printf("Gefunden [%s]: %s, %s -> %s\n", cfg.tag, place, name, id);
     if (fallback == "") fallback = id;
-    if (strstr(place, "Karlsfeld") && strstr(name, "Rathaus")) {
-      stationId = id;
+    if (strstr(place, "Karlsfeld") && strstr(name, cfg.match)) {
+      stationIds[idx] = id;
       return true;
     }
   }
   if (fallback != "") {
-    stationId = fallback;
+    stationIds[idx] = fallback;
     return true;
   }
-  lastError = "Haltestelle nicht gefunden";
+  lastError = String("Haltestelle ") + cfg.tag + " nicht gefunden";
   return false;
 }
 
-bool fetchDepartures() {
-  String url = String(API_BASE) + "/departures?globalId=" + urlEncode(stationId.c_str()) +
+// Abfahrten einer Haltestelle an departures[] anhängen
+bool fetchStation(int idx, int &n) {
+  String url = String(API_BASE) + "/departures?globalId=" + urlEncode(stationIds[idx].c_str()) +
                "&limit=" + String(MAX_DEPARTURES) +
                "&offsetInMinutes=" + String(WALK_MINUTES) +
                // ohne diese Angabe liefert die API keine Regionalbusse (REGIONAL_BUS)
@@ -255,11 +260,11 @@ bool fetchDepartures() {
   JsonDocument doc;
   if (!httpGetJson(url, doc, filter)) return false;
 
-  int n = 0;
   for (JsonObject d : doc.as<JsonArray>()) {
-    if (n >= MAX_DEPARTURES) break;
+    if (n >= MAX_TOTAL) break;
     const char *line = d["label"] | "?";
-    Serial.printf("  %-5s %-12s %s\n", line, (const char *)(d["transportType"] | "?"),
+    Serial.printf("  [%s] %-5s %-12s %s\n", STATIONS[idx].tag, line,
+                  (const char *)(d["transportType"] | "?"),
                   (const char *)(d["destination"] | ""));
     if (!lineAllowed(line)) continue;
 
@@ -274,7 +279,27 @@ bool fetchDepartures() {
     dep.cancelled = d["cancelled"] | false;
     dep.delay     = d["delayInMinutes"] | 0;
     dep.departure = (time_t)(((dep.realtime && realtime > 0) ? realtime : planned) / 1000LL);
+    dep.station   = idx;
     n++;
+  }
+  return true;
+}
+
+bool fetchDepartures() {
+  int n = 0;
+  int ok = 0;
+  String err = "";
+  for (int i = 0; i < NUM_STATIONS; i++) {
+    if (stationIds[i] == "" && !findStation(i)) {
+      err = lastError;
+      continue;
+    }
+    if (fetchStation(i, n)) ok++;
+    else err = String(STATIONS[i].tag) + ": " + lastError;
+  }
+  if (ok == 0) {
+    lastError = err;
+    return false;   // alte Daten bleiben stehen
   }
 
   // nach Abfahrtszeit sortieren
@@ -290,7 +315,7 @@ bool fetchDepartures() {
 
   departureCount = n;
   lastSuccess = time(nullptr);
-  lastError = "";
+  lastError = err;   // leer, wenn alle Haltestellen geklappt haben
   Serial.printf("%d Abfahrten geladen\n", n);
   return true;
 }
@@ -383,9 +408,18 @@ void drawRow(int index, const Departure *dep, time_t now) {
       rightEdge -= s.textWidth(d, 2) + 6;
     }
 
+    // Kürzel der Haltestelle (nur bei mehreren Haltestellen)
+    int destX = 58;
+    if (NUM_STATIONS > 1) {
+      s.setTextDatum(ML_DATUM);
+      s.setTextColor(COL_DIM);
+      s.drawString(STATIONS[dep->station].tag, 56, mid, 2);
+      destX = 56 + s.textWidth(STATIONS[dep->station].tag, 2) + 8;
+    }
+
     // Ziel (bei Bedarf gekürzt)
     String dest = dep->destination;
-    int maxW = rightEdge - 58;
+    int maxW = rightEdge - destX;
     if (s.textWidth(dest, 2) > maxW) {
       while (dest.length() > 1 && s.textWidth(dest + ".", 2) > maxW) {
         dest.remove(dest.length() - 1);
@@ -394,9 +428,9 @@ void drawRow(int index, const Departure *dep, time_t now) {
     }
     s.setTextDatum(ML_DATUM);
     s.setTextColor(dep->cancelled ? COL_DIM : COL_TEXT);
-    s.drawString(dest, 58, mid, 2);
+    s.drawString(dest, destX, mid, 2);
     if (dep->cancelled) {
-      s.drawFastHLine(58, mid, s.textWidth(dest, 2), COL_CANCEL);
+      s.drawFastHLine(destX, mid, s.textWidth(dest, 2), COL_CANCEL);
     }
   }
 
@@ -570,14 +604,18 @@ void setup() {
   unsigned long start = millis();
   while (!timeValid() && millis() - start < 15000) delay(200);
 
-  if (stationId == "") {
-    bootMessage("Suche Haltestelle...");
-    while (!findStation()) {
-      bootMessage("Haltestellensuche: " + lastError);
-      delay(5000);
+  for (int i = 0; i < NUM_STATIONS; i++) {
+    stationIds[i] = STATIONS[i].globalId;
+    // nicht gefundene Haltestellen werden später bei jedem Abruf erneut gesucht
+    for (int attempt = 0; stationIds[i] == "" && attempt < 3; attempt++) {
+      bootMessage(String("Suche Haltestelle ") + STATIONS[i].query + "...");
+      if (!findStation(i)) {
+        bootMessage("Haltestellensuche: " + lastError);
+        delay(3000);
+      }
     }
+    Serial.printf("Haltestelle [%s] ID: %s\n", STATIONS[i].tag, stationIds[i].c_str());
   }
-  Serial.println("Haltestellen-ID: " + stationId);
 
   tft.fillScreen(COL_BG);
   drawHeader(true);
@@ -628,8 +666,7 @@ void loop() {
     forceFetch = false;
     lastFetchMs = nowMs;
     if (WiFi.status() == WL_CONNECTED) {
-      if (stationId == "") findStation();
-      if (stationId != "") fetchDepartures();
+      fetchDepartures();
     }
     drawAll();
     lastDrawMs = nowMs;

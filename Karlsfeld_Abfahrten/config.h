@@ -10,17 +10,21 @@ static const WifiCredentials WIFI_NETWORKS[] = {
   // { "HANDY_HOTSPOT", "PASSWORT_3" },
 };
 
-// ================== Haltestelle ==================
-// Suchbegriff für die MVG-Haltestellensuche (wird beim Start aufgelöst).
-#define STATION_QUERY "Karlsfeld Rathausstraße"
-
-// Optional: feste globalId der Haltestelle (z.B. "de:09174:1234").
-// Wenn leer, wird die ID automatisch über STATION_QUERY gesucht.
-// Die gefundene ID wird im Seriellen Monitor ausgegeben.
-#define STATION_GLOBAL_ID ""
+// ================== Haltestellen ==================
+// Die Abfahrten aller Haltestellen werden gemeinsam, nach Zeit sortiert angezeigt.
+//   query    : Suchbegriff für die MVG-Haltestellensuche
+//   match    : Teil des Haltestellennamens, um den richtigen Treffer auszuwählen
+//   tag      : kurzes Kürzel, das in jeder Zeile vor dem Ziel steht
+//   globalId : optional feste ID (z.B. "de:09174:1234"), dann entfällt die Suche.
+//              Die gefundenen IDs stehen beim Start im Seriellen Monitor.
+struct StationConfig { const char *query; const char *match; const char *tag; const char *globalId; };
+static const StationConfig STATIONS[] = {
+  { "Karlsfeld Rathausstraße",   "Rathaus", "R", "" },
+  { "Karlsfeld Einkaufsmärkte",  "Einkauf", "E", "" },
+};
 
 // Überschrift auf dem Display
-#define STATION_TITLE "Rathausstrasse"
+#define STATION_TITLE "Karlsfeld"
 
 // ================== Filter (optional) ==================
 // Nur bestimmte Linien anzeigen, kommagetrennt, z.B. "710,711". Leer = alle.
@@ -31,7 +35,7 @@ static const WifiCredentials WIFI_NETWORKS[] = {
 
 // ================== Aktualisierung ==================
 #define REFRESH_SECONDS 30   // wie oft die Daten neu geladen werden
-#define MAX_DEPARTURES  12   // wie viele Abfahrten von der API geholt werden
+#define MAX_DEPARTURES  12   // wie viele Abfahrten pro Haltestelle geholt werden
 
 // ================== Helligkeitsregelung ==================
 // Lichtsensor (LDR) auf dem Board steuert die Hintergrundbeleuchtung.
